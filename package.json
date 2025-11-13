@@ -1,0 +1,20 @@
+{
+  "name": "mixo-backend",
+  "version": "1.0.0",
+  "description": "Backend for MIXO ticket system with Mollie payments, PDF tickets, and QR code validation",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": "Your Name",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "node-fetch": "^3.3.2",
+    "cors": "^2.8.5",
+    "nodemailer": "^6.9.3",
+    "pdfkit": "^0.13.0",
+    "qrcode": "^1.5.1"
+  }
+}

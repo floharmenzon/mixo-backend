@@ -12,6 +12,7 @@ import "dotenv/config";
 const app = express();
 app.use(cors());
 app.use(express.json());
+app.use(express.urlencoded({ extended: true })); // ✅ For Mollie webhook
 
 const PORT = process.env.PORT || 3000;
 
@@ -70,7 +71,7 @@ function logAudit(action, details = {}) {
 }
 
 // --------------------
-// Email
+// Email sender
 // --------------------
 const transporter = nodemailer.createTransport({
     service: "gmail",
@@ -147,10 +148,9 @@ app.post("/create-payment", async (req, res) => {
     if (!tickets || !email) return res.status(400).json({ error: "Quantity and email required" });
 
     try {
-        // Load sold tickets
         const ticketsData = safeReadJSON(TICKETS_FILE);
 
-        // Check availability & calculate total
+        // Calculate total with BTW
         let totalAmount = 0;
         for (const t of tickets) {
             const sold = ticketsData[t.name]?.sold ?? 0;
@@ -160,30 +160,31 @@ app.post("/create-payment", async (req, res) => {
             totalAmount += Number(t.price) * Number(t.quantity) * (1 + BTW_RATE);
         }
 
-        totalAmount = totalAmount.toFixed(2);
+        // Mollie requires a string
+        const totalAmountStr = totalAmount.toFixed(2);
 
-        // Create Mollie payment
         const response = await fetch("https://api.mollie.com/v2/payments", {
             method: "POST",
             headers: {
-                "Authorization": `Bearer ${MOLLIE_API_KEY}`,
-                "Content-Type": "application/json"
+                Authorization: `Bearer ${MOLLIE_API_KEY}`,
+                "Content-Type": "application/json",
             },
             body: JSON.stringify({
-                amount: { currency: "EUR", value: totalAmount },
+                amount: { currency: "EUR", value: totalAmountStr },
                 description: `MIXO Tickets x${tickets.reduce((a, b) => a + Number(b.quantity), 0)}`,
                 redirectUrl: "https://www.intheflo.xyz/thank-you",
                 webhookUrl: `${RENDER_URL}/mollie-webhook`,
-                metadata: { email }
-            })
+                metadata: { email },
+            }),
         });
 
         const data = await response.json();
         console.log("Mollie response status:", response.status);
         console.log("Mollie response body:", JSON.stringify(data, null, 2));
 
-        if (!data._links?.checkout?.href)
+        if (!data._links?.checkout?.href) {
             return res.status(500).json({ error: "Failed to create Mollie payment", data });
+        }
 
         // Save pending order
         const pendingOrders = safeReadJSON(PENDING_ORDERS_FILE);
@@ -206,9 +207,11 @@ app.post("/mollie-webhook", async (req, res) => {
 
     try {
         const mollieRes = await fetch(`https://api.mollie.com/v2/payments/${paymentId}`, {
-            headers: { Authorization: `Bearer ${MOLLIE_API_KEY}` }
+            headers: { Authorization: `Bearer ${MOLLIE_API_KEY}` },
         });
         const paymentData = await mollieRes.json();
+        console.log("Webhook paymentData:", paymentData);
+
         if (paymentData.status !== "paid") return res.sendStatus(200);
 
         // Load pending orders
@@ -231,7 +234,12 @@ app.post("/mollie-webhook", async (req, res) => {
                 const ticketId = `${t.name}-${ticketNumber}-${Date.now()}`;
                 ticketsData[t.name].sold++;
 
-                issuedTickets[ticketId] = { name: t.name, email: order.email, issuedAt: new Date().toISOString(), paymentId };
+                issuedTickets[ticketId] = {
+                    name: t.name,
+                    email: order.email,
+                    issuedAt: new Date().toISOString(),
+                    paymentId,
+                };
                 usedTickets[ticketId] = { used: false };
 
                 const pdfPath = await generateTicketPDF(ticketId, t.name, order.email);

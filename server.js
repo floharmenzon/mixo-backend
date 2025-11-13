@@ -145,16 +145,16 @@ app.post("/create-payment", async (req, res) => {
         // Load sold tickets
         const ticketsData = safeReadJSON(TICKETS_FILE);
 
-        // Check availability & total
+        // Check availability & calculate total
         let totalAmount = 0;
         for (const t of tickets) {
             const sold = ticketsData[t.name]?.sold ?? 0;
-            if (sold + t.quantity > (ticketsData[t.name]?.max ?? Infinity)) {
+            if (sold + Number(t.quantity) > (ticketsData[t.name]?.max ?? Infinity)) {
                 return res.status(400).json({ error: `Not enough ${t.name} tickets available` });
             }
-            totalAmount += t.price * t.quantity;
+            totalAmount += Number(t.price) * Number(t.quantity);
         }
-        totalAmount = totalAmount.toFixed(2);
+        const totalAmountStr = totalAmount.toFixed(2);
 
         // Create Mollie payment
         const response = await fetch("https://api.mollie.com/v2/payments", {
@@ -164,8 +164,8 @@ app.post("/create-payment", async (req, res) => {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                amount: { currency: "EUR", value: totalAmount.toFixed(2) }, // convert here only
-                description: `MIXO Tickets x${tickets.reduce((a, b) => a + b.quantity, 0)}`,
+                amount: { currency: "EUR", value: totalAmountStr },
+                description: `MIXO Tickets x${tickets.reduce((a, b) => a + Number(b.quantity), 0)}`,
                 redirectUrl: "https://www.intheflo.xyz/thank-you",
                 webhookUrl: `${RENDER_URL}/mollie-webhook`,
                 metadata: { email }
@@ -173,7 +173,6 @@ app.post("/create-payment", async (req, res) => {
         });
 
         const data = await response.json();
-        // ✅ Add these logs right here
         console.log("Mollie response status:", response.status);
         console.log("Mollie response body:", JSON.stringify(data, null, 2));
 

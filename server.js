@@ -126,6 +126,36 @@ async function sendTicketsEmail(email, filePaths, totalTickets) {
 // --------------------
 app.get("/", (req, res) => res.send("MIXO Backend Running"));
 
+// ===== Create Payment Endpoint =====
+app.post('/create-payment', async (req, res) => {
+    const { tickets, email } = req.body;
+    if (!tickets || !email) return res.status(400).json({ error: "Quantity and email required" });
+
+    let totalAmount = tickets.reduce((sum, t) => sum + t.price * t.quantity, 0).toFixed(2);
+
+    try {
+        const response = await fetch('https://api.mollie.com/v2/payments', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${MOLLIE_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                amount: { currency: 'EUR', value: totalAmount },
+                description: `MIXO Tickets x${tickets.reduce((a, b) => a + b.quantity, 0)}`,
+                redirectUrl: "https://www.intheflo.xyz/thank-you",
+                webhookUrl: `${RENDER_URL}/mollie-webhook`
+            })
+        });
+        const data = await response.json();
+        if (!data.checkoutUrl) return res.status(500).json({ error: "Failed to create Mollie payment" });
+        res.json({ checkoutUrl: data.checkoutUrl });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.toString() });
+    }
+});
+
 // --------------------
 // Ticket validation (QR)
 // --------------------

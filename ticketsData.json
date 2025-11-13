@@ -1,23 +1,14 @@
 {
 	"Early Bird": {
 		"sold": 0,
-		"maxQuantity": 50,
-		"status": "sold-out",
-		"statusLabel": "Sold Out",
-		"price": 5.00
+		"max": 50
 	},
 	"Standard": {
 		"sold": 0,
-		"maxQuantity": 600,
-		"status": "available",
-		"statusLabel": "Available",
-		"price": 7.50
+		"max": 600
 	},
 	"Latecomer": {
 		"sold": 0,
-		"maxQuantity": 100,
-		"status": "coming-soon",
-		"statusLabel": "Coming Soon",
-		"price": 10.00
+		"max": 100
 	}
 }

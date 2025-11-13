@@ -12,10 +12,20 @@
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
-    "express": "^4.18.2",
+    "express": "^4.21.2",
+    "fs-extra": "^11.3.2",
     "node-fetch": "^3.3.2",
-    "nodemailer": "^6.9.3",
+    "nodemailer": "^6.10.1",
     "pdfkit": "^0.13.0",
-    "qrcode": "^1.5.1"
-  }
+    "qrcode": "^1.5.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/floharmenzon/mixo-backend.git"
+  },
+  "keywords": [],
+  "bugs": {
+    "url": "https://github.com/floharmenzon/mixo-backend/issues"
+  },
+  "homepage": "https://github.com/floharmenzon/mixo-backend#readme"
 }

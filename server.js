@@ -170,7 +170,7 @@ app.post("/create-payment", async (req, res) => {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                amount: { currency: "EUR", value: totalAmountStr },
+                amount: { currency: "EUR", value: totalAmount },
                 description: `MIXO Tickets x${tickets.reduce((a, b) => a + Number(b.quantity), 0)}`,
                 redirectUrl: "https://www.intheflo.xyz/thank-you",
                 webhookUrl: `${RENDER_URL}/mollie-webhook`,

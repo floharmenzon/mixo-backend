@@ -28,6 +28,11 @@ const THANKYOU_MESSAGE =
     "Thank you, {email}, for purchasing {quantity} ticket(s)! Enjoy MIXO.";
 
 // --------------------
+// VAT / BTW rate
+// --------------------
+const BTW_RATE = 0.09; // 9% BTW
+
+// --------------------
 // File paths
 // --------------------
 const TICKETS_FILE = "./ticketsData.json";
@@ -149,12 +154,13 @@ app.post("/create-payment", async (req, res) => {
         let totalAmount = 0;
         for (const t of tickets) {
             const sold = ticketsData[t.name]?.sold ?? 0;
-            if (sold + Number(t.quantity) > (ticketsData[t.name]?.max ?? Infinity)) {
+            if (sold + t.quantity > (ticketsData[t.name]?.max ?? Infinity)) {
                 return res.status(400).json({ error: `Not enough ${t.name} tickets available` });
             }
-            totalAmount += Number(t.price) * Number(t.quantity);
+            totalAmount += Number(t.price) * Number(t.quantity) * (1 + BTW_RATE);
         }
-        const totalAmountStr = totalAmount.toFixed(2);
+
+        totalAmount = totalAmount.toFixed(2);
 
         // Create Mollie payment
         const response = await fetch("https://api.mollie.com/v2/payments", {

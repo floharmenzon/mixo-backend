@@ -176,14 +176,15 @@ app.post("/create-payment", async (req, res) => {
         console.log("Mollie response status:", response.status);
         console.log("Mollie response body:", JSON.stringify(data, null, 2));
 
-        if (!data.checkoutUrl) return res.status(500).json({ error: "Failed to create Mollie payment", data });
+        if (!data._links?.checkout?.href)
+            return res.status(500).json({ error: "Failed to create Mollie payment", data });
 
         // Save pending order
         const pendingOrders = safeReadJSON(PENDING_ORDERS_FILE);
         pendingOrders[data.id] = { tickets, email };
         safeWriteJSON(PENDING_ORDERS_FILE, pendingOrders);
 
-        res.json({ checkoutUrl: data.checkoutUrl });
+        res.json({ checkoutUrl: data._links.checkout.href });
     } catch (err) {
         console.error(err);
         res.status(500).json({ error: err.toString() });

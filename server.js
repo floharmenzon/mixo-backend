@@ -115,7 +115,7 @@ app.post('/create-payment', async (req, res) => {
         amount: { currency: 'EUR', value: totalPrice.toString() },
         description: `MIXO Ticket x${quantity}`,
         redirectUrl: `https://intheflo.xyz/thank-you`,
-        webhookUrl: `${https://mixo-backend.onrender.com}/mollie-webhook`
+        webhookUrl: `${RENDER_URL}/mollie-webhook`
       })
     });
 

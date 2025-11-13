@@ -1,4 +1,4 @@
-// server.js — MIXO Backend with QR validation, email, admin panel, and scanner UI
+// server.js — MIXO Backend with QR validation, email, Mollie payments, admin panel
 import express from "express";
 import cors from "cors";
 import fetch from "node-fetch";
@@ -38,7 +38,7 @@ const AUDIT_LOG_FILE = "./audit.log";
 const TICKETS_FOLDER = "./tickets";
 
 // --------------------
-// Safe file ops
+// Safe file operations
 // --------------------
 function safeReadJSON(filePath) {
     try {
@@ -126,29 +126,58 @@ async function sendTicketsEmail(email, filePaths, totalTickets) {
 // --------------------
 app.get("/", (req, res) => res.send("MIXO Backend Running"));
 
-// ===== Create Payment Endpoint =====
-app.post('/create-payment', async (req, res) => {
+// --------------------
+// Helper: admin auth
+// --------------------
+function isAdmin(req) {
+    const pass = req.query.pass || req.body?.pass || req.headers["x-admin-pass"];
+    return pass && pass === ADMIN_PASS;
+}
+
+// --------------------
+// Create payment (frontend calls this)
+// --------------------
+app.post("/create-payment", async (req, res) => {
     const { tickets, email } = req.body;
     if (!tickets || !email) return res.status(400).json({ error: "Quantity and email required" });
 
-    let totalAmount = tickets.reduce((sum, t) => sum + t.price * t.quantity, 0).toFixed(2);
+    // Load sold tickets
+    const ticketsData = safeReadJSON(TICKETS_FILE);
+
+    // Check availability & calculate total
+    let totalAmount = 0;
+    for (const t of tickets) {
+        const sold = ticketsData[t.name]?.sold ?? 0;
+        if (sold + t.quantity > (ticketsData[t.name]?.max ?? Infinity)) {
+            return res.status(400).json({ error: `Not enough ${t.name} tickets available` });
+        }
+        totalAmount += t.price * t.quantity;
+    }
+    totalAmount = totalAmount.toFixed(2);
 
     try {
-        const response = await fetch('https://api.mollie.com/v2/payments', {
-            method: 'POST',
+        const response = await fetch("https://api.mollie.com/v2/payments", {
+            method: "POST",
             headers: {
-                'Authorization': `Bearer ${MOLLIE_API_KEY}`,
-                'Content-Type': 'application/json'
+                "Authorization": `Bearer ${MOLLIE_API_KEY}`,
+                "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                amount: { currency: 'EUR', value: totalAmount },
+                amount: { currency: "EUR", value: totalAmount.toString() },
                 description: `MIXO Tickets x${tickets.reduce((a, b) => a + b.quantity, 0)}`,
                 redirectUrl: "https://www.intheflo.xyz/thank-you",
                 webhookUrl: `${RENDER_URL}/mollie-webhook`
             })
         });
+
         const data = await response.json();
-        if (!data.checkoutUrl) return res.status(500).json({ error: "Failed to create Mollie payment" });
+        if (!data.checkoutUrl) return res.status(500).json({ error: "Failed to create Mollie payment", data });
+
+        // Save pending order for webhook mapping
+        const pendingOrders = safeReadJSON(PENDING_ORDERS_FILE);
+        pendingOrders[data.id] = { tickets, email };
+        safeWriteJSON(PENDING_ORDERS_FILE, pendingOrders);
+
         res.json({ checkoutUrl: data.checkoutUrl });
     } catch (err) {
         console.error(err);
@@ -157,7 +186,65 @@ app.post('/create-payment', async (req, res) => {
 });
 
 // --------------------
-// Ticket validation (QR)
+// Mollie webhook
+// --------------------
+app.post("/mollie-webhook", async (req, res) => {
+    const paymentId = req.body.id;
+    if (!paymentId) return res.sendStatus(400);
+
+    try {
+        const mollieRes = await fetch(`https://api.mollie.com/v2/payments/${paymentId}`, {
+            headers: { Authorization: `Bearer ${MOLLIE_API_KEY}` }
+        });
+        const paymentData = await mollieRes.json();
+        if (paymentData.status !== "paid") return res.sendStatus(200);
+
+        // Load pending orders
+        const pendingOrders = safeReadJSON(PENDING_ORDERS_FILE);
+        const order = pendingOrders[paymentId];
+        if (!order) return res.sendStatus(404);
+
+        const ticketsData = safeReadJSON(TICKETS_FILE);
+        const issuedTickets = safeReadJSON(ISSUED_TICKETS_FILE);
+        const usedTickets = safeReadJSON(USED_TICKETS_FILE);
+
+        const pdfPaths = [];
+        let totalTickets = 0;
+
+        for (const t of order.tickets) {
+            ticketsData[t.name].sold = ticketsData[t.name].sold ?? 0;
+
+            for (let i = 0; i < t.quantity; i++) {
+                const ticketNumber = ticketsData[t.name].sold + 1;
+                const ticketId = `${t.name}-${ticketNumber}-${Date.now()}`;
+                ticketsData[t.name].sold++;
+
+                issuedTickets[ticketId] = { name: t.name, email: order.email, issuedAt: new Date().toISOString(), paymentId };
+                usedTickets[ticketId] = { used: false };
+
+                const pdfPath = await generateTicketPDF(ticketId, t.name, order.email);
+                pdfPaths.push(pdfPath);
+                totalTickets++;
+            }
+        }
+
+        safeWriteJSON(TICKETS_FILE, ticketsData);
+        safeWriteJSON(ISSUED_TICKETS_FILE, issuedTickets);
+        safeWriteJSON(USED_TICKETS_FILE, usedTickets);
+        delete pendingOrders[paymentId];
+        safeWriteJSON(PENDING_ORDERS_FILE, pendingOrders);
+
+        await sendTicketsEmail(order.email, pdfPaths, totalTickets);
+
+        res.sendStatus(200);
+    } catch (e) {
+        console.error(e);
+        res.sendStatus(500);
+    }
+});
+
+// --------------------
+// Ticket validation
 // --------------------
 app.get("/validate/:ticketId", (req, res) => {
     const ticketId = req.params.ticketId;
@@ -165,11 +252,8 @@ app.get("/validate/:ticketId", (req, res) => {
 
     if (!usedTickets[ticketId])
         return res.status(404).send("<h2 style='color:orange'>⚠️ Ticket not found</h2>");
-
     if (usedTickets[ticketId].used)
-        return res
-            .status(410)
-            .send("<h2 style='color:red'>❌ Already used ticket</h2>");
+        return res.status(410).send("<h2 style='color:red'>❌ Already used ticket</h2>");
 
     usedTickets[ticketId].used = true;
     usedTickets[ticketId].usedAt = new Date().toISOString();
@@ -179,86 +263,7 @@ app.get("/validate/:ticketId", (req, res) => {
 });
 
 // --------------------
-// Admin auth helper
-// --------------------
-function isAdmin(req) {
-    const pass = req.query.pass || req.body?.pass || req.headers["x-admin-pass"];
-    return pass && pass === ADMIN_PASS;
-}
-
-// --------------------
-// Admin scanner web page
-// --------------------
-app.get("/admin/scan", (req, res) => {
-    if (!isAdmin(req)) return res.status(403).send("Unauthorized");
-
-    res.send(`
-<!DOCTYPE html>
-<html>
-<head>
-<meta charset="utf-8" />
-<title>MIXO Ticket Scanner</title>
-<style>
-  body { font-family: sans-serif; background:#111; color:#fff; text-align:center; padding:20px; }
-  video { width:100%; max-width:400px; border:3px solid #444; border-radius:10px; }
-  input { padding:10px; width:80%; margin:10px; font-size:16px; }
-  button { padding:10px 20px; font-size:16px; }
-  #result { margin-top:20px; font-size:18px; }
-</style>
-</head>
-<body>
-  <h2>🎟️ MIXO Ticket Scanner</h2>
-  <video id="preview"></video>
-  <p>or manually enter Ticket ID:</p>
-  <input id="manualId" placeholder="Enter Ticket ID" />
-  <button onclick="manualValidate()">Validate</button>
-  <div id="result"></div>
-
-  <script src="https://unpkg.com/html5-qrcode"></script>
-  <script>
-    const pass = new URLSearchParams(window.location.search).get('pass');
-    const resultBox = document.getElementById('result');
-
-    function showResult(msg, color) {
-      resultBox.innerHTML = msg;
-      resultBox.style.color = color;
-    }
-
-    async function validateTicket(ticketId) {
-      if (!ticketId) return;
-      const res = await fetch('/validate/' + encodeURIComponent(ticketId));
-      const text = await res.text();
-      if (res.status === 200) showResult('✅ VALID: ' + ticketId, 'lightgreen');
-      else if (res.status === 410) showResult('❌ USED: ' + ticketId, 'red');
-      else if (res.status === 404) showResult('⚠️ NOT FOUND: ' + ticketId, 'orange');
-      else showResult('⚠️ Error validating', 'orange');
-    }
-
-    async function manualValidate() {
-      const val = document.getElementById('manualId').value.trim();
-      validateTicket(val);
-    }
-
-    // QR scanner
-    const html5QrCode = new Html5Qrcode("preview");
-    html5QrCode.start(
-      { facingMode: "environment" },
-      { fps: 10, qrbox: 250 },
-      (decodedText) => {
-        html5QrCode.stop();
-        validateTicket(decodedText.split('/').pop());
-        setTimeout(() => location.reload(), 3000);
-      },
-      (err) => {}
-    );
-  </script>
-</body>
-</html>
-  `);
-});
-
-// --------------------
-// Admin view used tickets
+// Admin endpoints
 // --------------------
 app.get("/admin/used-tickets", (req, res) => {
     if (!isAdmin(req)) return res.status(403).json({ error: "Unauthorized" });

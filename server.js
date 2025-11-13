@@ -1,12 +1,13 @@
-import express from 'express';
-import cors from 'cors';
-import fetch from 'node-fetch';
-import nodemailer from 'nodemailer';
-import PDFDocument from 'pdfkit';
-import QRCode from 'qrcode';
-import fs from 'fs';
-import path from 'path';
-import 'dotenv/config';
+// server.js — MIXO Backend with QR validation, email, admin panel, and scanner UI
+import express from "express";
+import cors from "cors";
+import fetch from "node-fetch";
+import nodemailer from "nodemailer";
+import PDFDocument from "pdfkit";
+import QRCode from "qrcode";
+import fs from "fs";
+import path from "path";
+import "dotenv/config";
 
 const app = express();
 app.use(cors());
@@ -14,165 +15,229 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3000;
 
-// ENV Variables
+// --------------------
+// Environment variables
+// --------------------
 const EMAIL_USER = process.env.EMAIL_USER;
 const EMAIL_PASS = process.env.EMAIL_PASS;
 const MOLLIE_API_KEY = process.env.MOLLIE_API_KEY;
 const RENDER_URL = process.env.RENDER_URL;
-const THANKYOU_MESSAGE = process.env.THANKYOU_MESSAGE || "Thank you for purchasing {quantity} tickets!";
+const ADMIN_PASS = process.env.ADMIN_PASS || "";
+const THANKYOU_MESSAGE =
+    process.env.THANKYOU_MESSAGE ||
+    "Thank you, {email}, for purchasing {quantity} ticket(s)! Enjoy MIXO.";
 
-// Nodemailer setup
+// --------------------
+// File paths
+// --------------------
+const TICKETS_FILE = "./ticketsData.json";
+const USED_TICKETS_FILE = "./usedTickets.json";
+const ISSUED_TICKETS_FILE = "./issuedTickets.json";
+const PENDING_ORDERS_FILE = "./pendingOrders.json";
+const AUDIT_LOG_FILE = "./audit.log";
+const TICKETS_FOLDER = "./tickets";
+
+// --------------------
+// Safe file ops
+// --------------------
+function safeReadJSON(filePath) {
+    try {
+        if (!fs.existsSync(filePath)) {
+            fs.writeFileSync(filePath, JSON.stringify({}, null, 2));
+            return {};
+        }
+        return JSON.parse(fs.readFileSync(filePath, "utf8"));
+    } catch {
+        return {};
+    }
+}
+function safeWriteJSON(filePath, data) {
+    fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
+}
+if (!fs.existsSync(TICKETS_FOLDER)) fs.mkdirSync(TICKETS_FOLDER, { recursive: true });
+
+// --------------------
+// Audit log
+// --------------------
+function logAudit(action, details = {}) {
+    const entry = { ts: new Date().toISOString(), action, ...details };
+    fs.appendFileSync(AUDIT_LOG_FILE, JSON.stringify(entry) + "\n");
+}
+
+// --------------------
+// Email
+// --------------------
 const transporter = nodemailer.createTransport({
-    service: 'gmail',
-    auth: { user: EMAIL_USER, pass: EMAIL_PASS }
+    service: "gmail",
+    auth: { user: EMAIL_USER, pass: EMAIL_PASS },
 });
 
-// Load tickets sold data
-const ticketsFile = './ticketsData.json';
-function loadTicketsData() { return JSON.parse(fs.readFileSync(ticketsFile)); }
-function saveTicketsData(data) { fs.writeFileSync(ticketsFile, JSON.stringify(data, null, 2)); }
-
-// Test endpoint
-app.get('/', (req, res) => res.send('MIXO Backend Running'));
-
-// Generate a PDF ticket
-async function generateTicketPDF(ticketName, ticketNumber, email) {
+// --------------------
+// PDF ticket creation
+// --------------------
+async function generateTicketPDF(ticketId, ticketName, email) {
     return new Promise(async (resolve, reject) => {
         try {
-            const doc = new PDFDocument({ size: 'A6', margin: 20 });
-            const folder = path.join('tickets');
-            if (!fs.existsSync(folder)) fs.mkdirSync(folder);
-            const filePath = path.join(folder, `${ticketName}-${ticketNumber}.pdf`);
+            const filePath = path.join(TICKETS_FOLDER, `${ticketId}.pdf`);
+            const doc = new PDFDocument({ size: "A6", margin: 20 });
             const stream = fs.createWriteStream(filePath);
             doc.pipe(stream);
 
-            // Background
-            doc.rect(0, 0, doc.page.width, doc.page.height).fill('#0a0a0a');
+            doc.rect(0, 0, doc.page.width, doc.page.height).fill("#0a0a0a");
+            doc.fillColor("#FF0000").fontSize(20).text("MIXO Ticket", { align: "center" });
 
-            // Title
-            doc.fillColor('#FF0000').fontSize(20).text('MIXO Ticket', { align: 'center', valign: 'center' });
-
-            // QR code linking to validate endpoint
-            const qrData = `${RENDER_URL}/validate/${ticketName}-${ticketNumber}`;
+            const qrData = `${RENDER_URL}/validate/${encodeURIComponent(ticketId)}`;
             const qrImg = await QRCode.toDataURL(qrData);
             doc.image(qrImg, doc.page.width / 2 - 75, 80, { width: 150 });
 
-            // Ticket info
-            doc.fillColor('white').fontSize(12)
-                .text(`Ticket #: ${ticketNumber}`, 20, 250)
+            doc.fillColor("white").fontSize(12)
+                .text(`Ticket ID: ${ticketId}`, 20, 250)
                 .text(`Type: ${ticketName}`, 20, 265)
                 .text(`Email: ${email}`, 20, 280);
 
             doc.end();
-            stream.on('finish', () => resolve(filePath));
-        } catch (e) { reject(e); }
+            stream.on("finish", () => resolve(filePath));
+        } catch (e) {
+            reject(e);
+        }
     });
 }
 
-// Send email with PDF tickets
+// --------------------
+// Email sender
+// --------------------
 async function sendTicketsEmail(email, filePaths, totalTickets) {
-    const message = THANKYOU_MESSAGE.replace("{quantity}", totalTickets);
+    const message = THANKYOU_MESSAGE
+        .replace("{quantity}", totalTickets)
+        .replace("{email}", email);
+
     await transporter.sendMail({
         from: `"MIXO Tickets" <${EMAIL_USER}>`,
         to: email,
-        subject: 'Your MIXO Tickets',
+        subject: `Your MIXO Tickets (${totalTickets})`,
         text: message,
-        attachments: filePaths.map(f => ({ filename: path.basename(f), path: f }))
+        attachments: filePaths.map(f => ({ filename: path.basename(f), path: f })),
     });
+    logAudit("email_sent", { to: email, totalTickets });
 }
 
-// Create Mollie Payment
-app.post('/create-payment', async (req, res) => {
-    const { tickets: selectedTickets, email } = req.body;
-    if (!selectedTickets || !email) return res.status(400).json({ error: "Quantity and email required" });
+// --------------------
+// Root
+// --------------------
+app.get("/", (req, res) => res.send("MIXO Backend Running"));
 
-    const ticketsData = loadTicketsData();
-    let totalAmount = 0;
-
-    // Check availability & calculate total
-    for (const t of selectedTickets) {
-        const sold = ticketsData[t.name]?.sold ?? 0;
-        if (t.quantity + sold > ticketsData[t.name]?.max) {
-            return res.status(400).json({ error: `Not enough ${t.name} tickets available` });
-        }
-        totalAmount += t.quantity * t.price;
-    }
-
-    totalAmount = totalAmount.toFixed(2);
-
-    try {
-        // Mollie API request
-        const response = await fetch('https://api.mollie.com/v2/payments', {
-            method: 'POST',
-            headers: {
-                'Authorization': `Bearer ${MOLLIE_API_KEY}`,
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                amount: { currency: 'EUR', value: totalAmount.toString() },
-                description: `MIXO Tickets x${selectedTickets.reduce((a, b) => a + b.quantity, 0)}`,
-                redirectUrl: "https://www.intheflo.xyz/thank-you",
-                webhookUrl: `${RENDER_URL}/mollie-webhook`
-            })
-        });
-
-        const data = await response.json();
-        if (!data.checkoutUrl) return res.status(500).json({ error: "Failed to create Mollie payment", data });
-
-        // Temporarily store order in memory or DB here if needed for webhook validation
-        // You could store selectedTickets and email keyed by payment ID
-
-        res.json({ checkoutUrl: data.checkoutUrl });
-    } catch (e) {
-        console.error(e);
-        res.status(500).json({ error: e.toString() });
-    }
-});
-
-// Mollie webhook
-app.post('/mollie-webhook', async (req, res) => {
-    // Example: you would fetch payment details from Mollie using payment ID
-    // Then confirm the payment was successful
-    // For each ticket type, generate PDFs and update ticketsData.json
-
-    // Simulated: Assume we received order details (in real: use Mollie payment ID)
-    // Example payload:
-    /*
-    const order = {
-      email: "customer@example.com",
-      tickets: [
-        { name:"Standard", price:7.50, quantity:2 }
-      ]
-    };
-    */
-
-    // For demo, you would replace this with real webhook handling
-    // After confirmation:
-    /*
-    const pdfPaths = [];
-    let totalTickets = 0;
-    for(const t of order.tickets){
-      for(let i=1;i<=t.quantity;i++){
-        const ticketNumber = ticketsData[t.name].sold + 1;
-        ticketsData[t.name].sold++;
-        saveTicketsData(ticketsData);
-        const pdfPath = await generateTicketPDF(t.name, ticketNumber, order.email);
-        pdfPaths.push(pdfPath);
-        totalTickets++;
-      }
-    }
-    await sendTicketsEmail(order.email, pdfPaths, totalTickets);
-    */
-
-    res.sendStatus(200);
-});
-
-// Validate QR ticket (optional)
-app.get('/validate/:ticketId', (req, res) => {
+// --------------------
+// Ticket validation (QR)
+// --------------------
+app.get("/validate/:ticketId", (req, res) => {
     const ticketId = req.params.ticketId;
-    // Here you can implement: check if ticketId was used already
-    // Mark as used and return success/fail
-    res.send(`Ticket ${ticketId} scanned (demo).`);
+    const usedTickets = safeReadJSON(USED_TICKETS_FILE);
+
+    if (!usedTickets[ticketId])
+        return res.status(404).send("<h2 style='color:orange'>⚠️ Ticket not found</h2>");
+
+    if (usedTickets[ticketId].used)
+        return res
+            .status(410)
+            .send("<h2 style='color:red'>❌ Already used ticket</h2>");
+
+    usedTickets[ticketId].used = true;
+    usedTickets[ticketId].usedAt = new Date().toISOString();
+    safeWriteJSON(USED_TICKETS_FILE, usedTickets);
+    logAudit("ticket_validated", { ticketId });
+    res.send("<h2 style='color:green'>✅ Ticket validated successfully</h2>");
 });
 
-app.listen(PORT, () => console.log(`MIXO Backend running on port ${PORT}`));
+// --------------------
+// Admin auth helper
+// --------------------
+function isAdmin(req) {
+    const pass = req.query.pass || req.body?.pass || req.headers["x-admin-pass"];
+    return pass && pass === ADMIN_PASS;
+}
+
+// --------------------
+// Admin scanner web page
+// --------------------
+app.get("/admin/scan", (req, res) => {
+    if (!isAdmin(req)) return res.status(403).send("Unauthorized");
+
+    res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<title>MIXO Ticket Scanner</title>
+<style>
+  body { font-family: sans-serif; background:#111; color:#fff; text-align:center; padding:20px; }
+  video { width:100%; max-width:400px; border:3px solid #444; border-radius:10px; }
+  input { padding:10px; width:80%; margin:10px; font-size:16px; }
+  button { padding:10px 20px; font-size:16px; }
+  #result { margin-top:20px; font-size:18px; }
+</style>
+</head>
+<body>
+  <h2>🎟️ MIXO Ticket Scanner</h2>
+  <video id="preview"></video>
+  <p>or manually enter Ticket ID:</p>
+  <input id="manualId" placeholder="Enter Ticket ID" />
+  <button onclick="manualValidate()">Validate</button>
+  <div id="result"></div>
+
+  <script src="https://unpkg.com/html5-qrcode"></script>
+  <script>
+    const pass = new URLSearchParams(window.location.search).get('pass');
+    const resultBox = document.getElementById('result');
+
+    function showResult(msg, color) {
+      resultBox.innerHTML = msg;
+      resultBox.style.color = color;
+    }
+
+    async function validateTicket(ticketId) {
+      if (!ticketId) return;
+      const res = await fetch('/validate/' + encodeURIComponent(ticketId));
+      const text = await res.text();
+      if (res.status === 200) showResult('✅ VALID: ' + ticketId, 'lightgreen');
+      else if (res.status === 410) showResult('❌ USED: ' + ticketId, 'red');
+      else if (res.status === 404) showResult('⚠️ NOT FOUND: ' + ticketId, 'orange');
+      else showResult('⚠️ Error validating', 'orange');
+    }
+
+    async function manualValidate() {
+      const val = document.getElementById('manualId').value.trim();
+      validateTicket(val);
+    }
+
+    // QR scanner
+    const html5QrCode = new Html5Qrcode("preview");
+    html5QrCode.start(
+      { facingMode: "environment" },
+      { fps: 10, qrbox: 250 },
+      (decodedText) => {
+        html5QrCode.stop();
+        validateTicket(decodedText.split('/').pop());
+        setTimeout(() => location.reload(), 3000);
+      },
+      (err) => {}
+    );
+  </script>
+</body>
+</html>
+  `);
+});
+
+// --------------------
+// Admin view used tickets
+// --------------------
+app.get("/admin/used-tickets", (req, res) => {
+    if (!isAdmin(req)) return res.status(403).json({ error: "Unauthorized" });
+    res.json(safeReadJSON(USED_TICKETS_FILE));
+});
+
+// --------------------
+// Start server
+// --------------------
+app.listen(PORT, () => {
+    console.log("✅ MIXO backend running on port " + PORT);
+});

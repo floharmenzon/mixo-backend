@@ -164,7 +164,7 @@ app.post("/create-payment", async (req, res) => {
                 "Content-Type": "application/json"
             },
             body: JSON.stringify({
-                amount: { currency: "EUR", value: totalAmount.toString() },
+                amount: { currency: "EUR", value: totalAmount.toFixed(2) }, // string "10.00"
                 description: `MIXO Tickets x${tickets.reduce((a, b) => a + b.quantity, 0)}`,
                 redirectUrl: "https://www.intheflo.xyz/thank-you",
                 webhookUrl: `${RENDER_URL}/mollie-webhook`,
@@ -173,6 +173,10 @@ app.post("/create-payment", async (req, res) => {
         });
 
         const data = await response.json();
+        // ✅ Add these logs right here
+        console.log("Mollie response status:", response.status);
+        console.log("Mollie response body:", JSON.stringify(data, null, 2));
+
         if (!data.checkoutUrl) return res.status(500).json({ error: "Failed to create Mollie payment", data });
 
         // Save pending order

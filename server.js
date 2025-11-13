@@ -127,7 +127,7 @@ async function sendTicketsEmail(email, filePaths, totalTickets) {
 app.get("/", (req, res) => res.send("MIXO Backend Running"));
 
 // --------------------
-// Helper: admin auth
+// Admin auth helper
 // --------------------
 function isAdmin(req) {
     const pass = req.query.pass || req.body?.pass || req.headers["x-admin-pass"];
@@ -135,27 +135,28 @@ function isAdmin(req) {
 }
 
 // --------------------
-// Create payment (frontend calls this)
+// Create Payment
 // --------------------
 app.post("/create-payment", async (req, res) => {
     const { tickets, email } = req.body;
     if (!tickets || !email) return res.status(400).json({ error: "Quantity and email required" });
 
-    // Load sold tickets
-    const ticketsData = safeReadJSON(TICKETS_FILE);
-
-    // Check availability & calculate total
-    let totalAmount = 0;
-    for (const t of tickets) {
-        const sold = ticketsData[t.name]?.sold ?? 0;
-        if (sold + t.quantity > (ticketsData[t.name]?.max ?? Infinity)) {
-            return res.status(400).json({ error: `Not enough ${t.name} tickets available` });
-        }
-        totalAmount += t.price * t.quantity;
-    }
-    totalAmount = totalAmount.toFixed(2);
-
     try {
+        // Load sold tickets
+        const ticketsData = safeReadJSON(TICKETS_FILE);
+
+        // Check availability & total
+        let totalAmount = 0;
+        for (const t of tickets) {
+            const sold = ticketsData[t.name]?.sold ?? 0;
+            if (sold + t.quantity > (ticketsData[t.name]?.max ?? Infinity)) {
+                return res.status(400).json({ error: `Not enough ${t.name} tickets available` });
+            }
+            totalAmount += t.price * t.quantity;
+        }
+        totalAmount = totalAmount.toFixed(2);
+
+        // Create Mollie payment
         const response = await fetch("https://api.mollie.com/v2/payments", {
             method: "POST",
             headers: {
@@ -166,14 +167,15 @@ app.post("/create-payment", async (req, res) => {
                 amount: { currency: "EUR", value: totalAmount.toString() },
                 description: `MIXO Tickets x${tickets.reduce((a, b) => a + b.quantity, 0)}`,
                 redirectUrl: "https://www.intheflo.xyz/thank-you",
-                webhookUrl: `${RENDER_URL}/mollie-webhook`
+                webhookUrl: `${RENDER_URL}/mollie-webhook`,
+                metadata: { email }
             })
         });
 
         const data = await response.json();
         if (!data.checkoutUrl) return res.status(500).json({ error: "Failed to create Mollie payment", data });
 
-        // Save pending order for webhook mapping
+        // Save pending order
         const pendingOrders = safeReadJSON(PENDING_ORDERS_FILE);
         pendingOrders[data.id] = { tickets, email };
         safeWriteJSON(PENDING_ORDERS_FILE, pendingOrders);

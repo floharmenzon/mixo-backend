@@ -17,6 +17,11 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Home route
+app.get("/", (req, res) => {
+    res.send("✅ MIXO Backend is running!");
+});
+
 const PORT = process.env.PORT || 3000;
 const TICKETS_FOLDER = "./backend/tickets";
 if (!fs.existsSync(TICKETS_FOLDER)) fs.mkdirSync(TICKETS_FOLDER, { recursive: true });
@@ -31,59 +36,63 @@ const transporter = nodemailer.createTransport({
 // Generate Ticket PDF
 // -----------------
 async function generateTicketPDF(ticketId, ticket, event, email) {
-    return new Promise(async (resolve, reject) => {
-        try {
-            const filePath = path.join(TICKETS_FOLDER, `${ticketId}.pdf`);
-            const doc = new PDFDocument({ size: "A4", margin: 40 });
-            const stream = fs.createWriteStream(filePath);
-            doc.pipe(stream);
+    const filePath = path.join(TICKETS_FOLDER, `${ticketId}.pdf`);
+    const doc = new PDFDocument({ size: "A4", margin: 40 });
+    const stream = fs.createWriteStream(filePath);
+    doc.pipe(stream);
 
-            // Background image (fetch from URL)
-            if (event.backgroundURL) {
-                const response = await fetch(event.backgroundURL);
-                if (!response.ok) throw new Error(`Failed to fetch background image: ${response.statusText}`);
-                const buffer = await response.arrayBuffer();
-                doc.image(Buffer.from(buffer), 0, 0, { width: doc.page.width, height: doc.page.height });
+    try {
+        // Background image
+        if (event.backgroundURL) {
+            const response = await fetch(event.backgroundURL);
+            if (response.ok) {
+                const buffer = Buffer.from(await response.arrayBuffer());
+                doc.image(buffer, 0, 0, { width: doc.page.width, height: doc.page.height });
             }
-
-            // Logo (fetch from URL)
-            if (event.logoURL) {
-                const response = await fetch(event.logoURL);
-                if (!response.ok) throw new Error(`Failed to fetch logo image: ${response.statusText}`);
-                const buffer = await response.arrayBuffer();
-                doc.image(Buffer.from(buffer), doc.page.width / 2 - 50, 40, { width: 100 });
-            }
-
-            // Ticket info
-            doc.moveDown(10).fillColor("black").fontSize(16)
-                .text(`Ticket ID: ${ticketId}`, { align: "left" })
-                .text(`Type: ${ticket.name}`, { align: "left" })
-                .text(`Email: ${email}`, { align: "left" })
-                .text(`Event: ${event.name}`, { align: "left" })
-                .text(`Date: ${event.date.toDateString()} ${event.date.toLocaleTimeString()}`, { align: "left" })
-                .text(`Ticket Code: ${ticket.code}`, { align: "left" });
-
-            // QR code
-            const qrData = `${process.env.RENDER_URL}/validate.html?ticketId=${encodeURIComponent(ticketId)}`;
-            const qrImg = await QRCode.toDataURL(qrData);
-            doc.image(qrImg, doc.page.width - 180, 200, { width: 150 });
-
-            // Footer
-            doc.moveDown(15).fontSize(12).fillColor("gray")
-                .text("For more information or questions, please check out:", { align: "center" })
-                .text("Website: www.intheflo.xyz", { align: "center" })
-                .text("Instagram: www.instagram.com/intheflo.xyz", { align: "center" })
-                .text("Facebook: www.facebook.com/intheflo.xyz", { align: "center" });
-
-            doc.end();
-
-            stream.on("finish", () => resolve(filePath));
-            stream.on("error", (err) => reject(err));
-
-        } catch (e) {
-            reject(e);
         }
-    });
+
+        // Logo
+        if (event.logoURL) {
+            const response = await fetch(event.logoURL);
+            if (response.ok) {
+                const buffer = Buffer.from(await response.arrayBuffer());
+                doc.image(buffer, doc.page.width / 2 - 50, 40, { width: 100 });
+            }
+        }
+
+        // Ticket info
+        doc.moveDown(10)
+            .fillColor("black")
+            .fontSize(16)
+            .text(`Ticket ID: ${ticketId}`)
+            .text(`Type: ${ticket.name}`)
+            .text(`Email: ${email}`)
+            .text(`Event: ${event.name}`)
+            .text(`Date: ${event.date.toDateString()} ${event.date.toLocaleTimeString()}`)
+            .text(`Ticket Code: ${ticket.code}`);
+
+        // QR code
+        const qrData = `${process.env.RENDER_URL}/validate.html?ticketId=${encodeURIComponent(ticketId)}`;
+        const qrImg = await QRCode.toDataURL(qrData);
+        doc.image(qrImg, doc.page.width - 180, 200, { width: 150 });
+
+        // Footer
+        doc.moveDown(15).fontSize(12).fillColor("gray")
+            .text("For more information or questions, please check out:", { align: "center" })
+            .text("Website: www.intheflo.xyz", { align: "center" })
+            .text("Instagram: www.instagram.com/intheflo.xyz", { align: "center" })
+            .text("Facebook: www.facebook.com/intheflo.xyz", { align: "center" });
+
+        doc.end();
+
+        return new Promise((resolve, reject) => {
+            stream.on("finish", () => resolve(filePath));
+            stream.on("error", reject);
+        });
+    } catch (err) {
+        doc.end();
+        throw err;
+    }
 }
 
 // -----------------
@@ -91,25 +100,21 @@ async function generateTicketPDF(ticketId, ticket, event, email) {
 // -----------------
 app.get("/events/:id/tickets", async (req, res) => {
     const { id } = req.params;
-
-    const tickets = await prisma.ticket.findMany({
-        where: { eventId: id }
-    });
+    const tickets = await prisma.ticket.findMany({ where: { eventId: id } });
 
     const processed = tickets.map(t => {
         let status = "available";
         let statusLabel = "Available";
 
         if (t.sold >= t.max) {
-            status = "unavailable";
+            status = "sold-out";
             statusLabel = "Sold Out";
+        } else if (!t.available) { // Add your "coming soon" or "unavailable" logic here
+            status = "coming-soon";
+            statusLabel = "Coming Soon";
         }
 
-        return {
-            ...t,
-            status,
-            statusLabel
-        };
+        return { ...t, status, statusLabel };
     });
 
     res.json(processed);
@@ -148,49 +153,61 @@ app.post("/create-payment", async (req, res) => {
 
         const data = await response.json();
         res.json({ checkoutUrl: data._links.checkout.href });
-    } catch (e) { res.status(500).json({ error: e.toString() }); }
+    } catch (e) {
+        res.status(500).json({ error: e.toString() });
+    }
 });
 
 // -----------------
-// Mollie webhook
+// Mollie Webhook
 // -----------------
 app.post("/mollie-webhook", async (req, res) => {
     res.sendStatus(200);
 
-    const paymentId = req.body.id;
-    if (!paymentId) return;
+    try {
+        const paymentId = req.body.id;
+        if (!paymentId) return;
 
-    const mollieRes = await fetch(`https://api.mollie.com/v2/payments/${paymentId}`, {
-        headers: { Authorization: `Bearer ${process.env.MOLLIE_API_KEY}` }
-    });
-    const paymentData = await mollieRes.json();
-    if (paymentData.status !== "paid") return;
+        const mollieRes = await fetch(`https://api.mollie.com/v2/payments/${paymentId}`, {
+            headers: { Authorization: `Bearer ${process.env.MOLLIE_API_KEY}` }
+        });
+        const paymentData = await mollieRes.json();
+        if (paymentData.status !== "paid") return;
 
-    const { eventId, selectedTickets, email } = paymentData.metadata;
-    const event = await prisma.event.findUnique({ where: { id: eventId }, include: { tickets: true } });
+        const { eventId, tickets: selectedTickets, email } = paymentData.metadata;
+        const event = await prisma.event.findUnique({ where: { id: eventId }, include: { tickets: true } });
+        if (!event) return;
 
-    for (const t of event.tickets) {
-        const quantity = selectedTickets.find(s => s.id === t.id)?.quantity || 0;
-        if (quantity <= 0) continue;
+        const attachments = [];
+        for (const t of event.tickets) {
+            const quantity = selectedTickets.find(s => s.id === t.id)?.quantity || 0;
+            if (quantity <= 0) continue;
 
-        for (let i = 0; i < quantity; i++) {
-            const ticketId = `${t.code}-${Date.now()}-${i}`;
-            await prisma.issuedTicket.create({
-                data: {
-                    id: ticketId,
-                    ticketId: t.id,
-                    ticketCode: t.code,   // <-- add this
-                    email,
-                    paymentId,
-                    used: false
-                }
-            });
-
-            await generateTicketPDF(ticketId, t, event, email);
+            for (let i = 0; i < quantity; i++) {
+                const ticketId = `${t.code}-${Date.now()}-${i}`;
+                await prisma.issuedTicket.create({
+                    data: { id: ticketId, ticketId: t.id, email, paymentId, used: false, ticketCode: t.code }
+                });
+                const filePath = await generateTicketPDF(ticketId, t, event, email);
+                attachments.push({ filename: `${ticketId}.pdf`, path: filePath });
+            }
         }
-    }
 
-    // Optionally send email here
+        if (attachments.length > 0) {
+            await transporter.sendMail({
+                from: `"MIXO Tickets" <${process.env.EMAIL_USER}>`,
+                to: email,
+                subject: `Your tickets for ${event.name}`,
+                html: `<p>Hi,</p>
+               <p>Thank you for your purchase! Attached are your tickets for <b>${event.name}</b>.</p>
+               <p>Ticket IDs: ${attachments.map(a => a.filename.replace(".pdf", "")).join(", ")}</p>
+               <p>Enjoy the event!</p>`,
+                attachments
+            });
+        }
+    } catch (err) {
+        console.error("❌ Mollie webhook error:", err);
+    }
 });
 
 // -----------------
@@ -198,7 +215,10 @@ app.post("/mollie-webhook", async (req, res) => {
 // -----------------
 app.get("/validate/:ticketId", async (req, res) => {
     const { ticketId } = req.params;
-    const ticket = await prisma.issuedTicket.findUnique({ where: { id: ticketId }, include: { ticket: true, ticket: { include: { event: true } } } });
+    const ticket = await prisma.issuedTicket.findUnique({
+        where: { id: ticketId },
+        include: { ticket: { include: { event: true } } }
+    });
     if (!ticket) return res.status(404).send("Ticket not found");
     if (ticket.used) return res.status(410).send("Ticket already used");
 

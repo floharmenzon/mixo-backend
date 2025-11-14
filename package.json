@@ -5,9 +5,9 @@
     "scripts": {
         "start": "node backend/src/server.js",
         "dev": "nodemon backend/src/server.js",
-        "prisma:generate": "prisma generate",
-        "prisma:push": "prisma db push",
-        "seed": "node prisma/seed.js",
+        "prisma:generate": "prisma generate --schema=backend/prisma/schema.prisma",
+        "prisma:push": "prisma db push --schema=backend/prisma/schema.prisma",
+        "seed": "node backend/prisma/seed.js",
         "postinstall": "prisma generate"
     },
     "dependencies": {

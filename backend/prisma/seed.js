@@ -8,7 +8,7 @@ async function main() {
             description: "The main MIXO party",
             logoURL: "https://intheflo.xyz/files/1382195/mixo-reloaded-icon.png",
             backgroundURL: "https://intheflo.xyz/files/1382404/mixo-reloaded-background.png",
-            date: new Date("2025-12-05T20:00:00Z"),
+            date: new Date("2026-01-10T17:00:00Z"),
             tickets: {
                 create: [
                     { name: "Early Bird", price: 5, max: 50, code: "EARLY" },
@@ -25,7 +25,7 @@ async function main() {
             description: "Second event",
             logoURL: "https://intheflo.xyz/files/1382195/mixo-reloaded-icon.png",
             backgroundURL: "https://intheflo.xyz/files/1382404/mixo-reloaded-background.png",
-            date: new Date("2026-01-10T20:00:00Z"),
+            date: new Date("2026-02-14T17:00:00Z"),
             tickets: {
                 create: [
                     { name: "Early Bird", price: 6, max: 50, code: "EARLY" },

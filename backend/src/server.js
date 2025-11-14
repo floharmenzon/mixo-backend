@@ -161,8 +161,16 @@ app.post("/mollie-webhook", async (req, res) => {
         for (let i = 0; i < quantity; i++) {
             const ticketId = `${t.code}-${Date.now()}-${i}`;
             await prisma.issuedTicket.create({
-                data: { id: ticketId, ticketId: t.id, email, paymentId, used: false }
+                data: {
+                    id: ticketId,
+                    ticketId: t.id,
+                    ticketCode: t.code,   // <-- add this
+                    email,
+                    paymentId,
+                    used: false
+                }
             });
+
             await generateTicketPDF(ticketId, t, event, email);
         }
     }

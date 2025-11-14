@@ -78,35 +78,44 @@ async function generateTicketPDF(uniqueTicketId, ticket, event, email) {
         // ---- TICKET INFO BOX (white container, bold) ----
         const infoY = qrY + qrSize + 40;
 
-        const boxWidth = doc.page.width * 0.75;
+        const boxWidth = doc.page.width * 0.50;
         const boxX = (doc.page.width - boxWidth) / 2;
         const boxHeight = 160;
 
-        // White background
-        doc.rect(boxX, infoY, boxWidth, boxHeight).fill("#FFFFFF");
+        // White background centered
+        doc.fillColor("#FFFFFF");
+        doc.rect(boxX, infoY, boxWidth, boxHeight).fill();
 
+        // Reset text color & font
         doc.fillColor("#000000")
             .font("Helvetica-Bold")
             .fontSize(18);
 
-        const lineX = boxX + 20;
+        // Centered text inside container
         let lineY = infoY + 30;
+        const textOptions = {
+            align: "center",
+            width: boxWidth
+        };
 
-        // Event date (uppercase label)
+        // Event name (uppercase)
+        doc.text(event.name.toUpperCase(), boxX, lineY, textOptions);
+        lineY += 35;
+
+        // Event date
         const dateFormatted = new Date(event.date).toLocaleString("en-GB", {
             dateStyle: "medium",
             timeStyle: "short"
         });
-
-        doc.text(`DATE: ${dateFormatted}`, lineX, lineY);
+        doc.text(`DATE: ${dateFormatted}`, boxX, lineY, textOptions);
         lineY += 35;
 
-        // Ticket name (no label)
-        doc.text(ticket.name.toUpperCase(), lineX, lineY);
+        // Email
+        doc.text(email.toUpperCase(), boxX, lineY, textOptions);
         lineY += 35;
 
-        // Unique ID only (no “Ticket ID:”)
-        doc.text(uniqueTicketId, lineX, lineY);
+        // Unique ID
+        doc.text(uniqueTicketId, boxX, lineY, textOptions);
 
         // ---- FOOTER (black bar bottom centered) ----
         const footerHeight = 50;
@@ -117,10 +126,11 @@ async function generateTicketPDF(uniqueTicketId, ticket, event, email) {
         doc.fillColor("#FFFFFF")
             .font("Helvetica-Bold")
             .fontSize(14)
-            .text("THANK YOU FOR YOUR PURCHASE — MIXO EVENTS", 0, footerY + 15, {
-                width: doc.page.width,
-                align: "center"
-            });
+            .text("For event info & updates:", 0, footerY + 20, { width: pageWidth, align: "center" })
+            .moveDown(0.3)
+            .text("www.intheflo.xyz", { align: "center" })
+            .moveDown(0.3)
+            .text("instagram.com/intheflo.xyz • facebook.com/intheflo.xyz", { align: "center" });
 
         doc.end();
 

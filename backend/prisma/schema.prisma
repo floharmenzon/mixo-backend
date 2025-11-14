@@ -8,34 +8,35 @@ datasource db {
 }
 
 model Event {
-  id          String    @id @default(cuid())
-  name        String
-  description String?
-  logoURL     String
+  id            String    @id @default(cuid())
+  name          String
+  description   String?
+  logoURL       String
   backgroundURL String
-  date        DateTime
-  tickets     Ticket[]
+  date          DateTime
+  tickets       Ticket[]
 }
 
 model Ticket {
-  id       String  @id @default(cuid())
-  name     String
-  price    Float
-  max      Int
-  sold     Int     @default(0)
-  code     String
-  event    Event   @relation(fields: [eventId], references: [id])
-  eventId  String
+  id            String         @id @default(cuid())
+  name          String
+  price         Float
+  max           Int
+  sold          Int            @default(0)
+  code          String
+  event         Event          @relation(fields: [eventId], references: [id])
+  eventId       String
   issuedTickets IssuedTicket[]
 }
 
 model IssuedTicket {
-  id        String   @id @default(cuid())
-  ticket    Ticket   @relation(fields: [ticketId], references: [id])
-  ticketId  String
-  email     String
-  issuedAt  DateTime @default(now())
-  used      Boolean  @default(false)
-  usedAt    DateTime?
-  paymentId String?
+  id         String   @id @default(cuid())
+  ticket     Ticket   @relation(fields: [ticketId], references: [id])
+  ticketId   String
+  ticketCode String   // ?? This stores your readable generated code
+  email      String
+  issuedAt   DateTime @default(now())
+  used       Boolean  @default(false)
+  usedAt     DateTime?
+  paymentId  String?
 }

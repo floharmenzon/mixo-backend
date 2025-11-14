@@ -18,14 +18,15 @@ model Event {
 }
 
 model Ticket {
-  id            String         @id @default(cuid())
-  name          String
-  price         Float
-  max           Int
-  sold          Int            @default(0)
-  code          String
-  event         Event          @relation(fields: [eventId], references: [id])
-  eventId       String
+  id       String  @id @default(cuid())
+  name     String
+  price    Float
+  max      Int
+  sold     Int     @default(0)
+  code     String
+  status   String  @default("available") // "available", "sold-out", "coming-soon", "unavailable"
+  event    Event   @relation(fields: [eventId], references: [id])
+  eventId  String
   issuedTickets IssuedTicket[]
 }
 

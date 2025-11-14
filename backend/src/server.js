@@ -35,106 +35,97 @@ const transporter = nodemailer.createTransport({
 // -----------------
 // Generate Ticket PDF
 // -----------------
-async function generateTicketPDF(ticketId, ticket, event, email) {
+async function generateTicketPDF(uniqueTicketId, ticket, event, email) {
     return new Promise(async (resolve, reject) => {
+        const filePath = `/tmp/ticket-${uniqueTicketId}.pdf`;
+        const doc = new PDFDocument({
+            size: "A4",
+            margin: 0
+        });
+
+        const stream = fs.createWriteStream(filePath);
+        doc.pipe(stream);
+
+        // ---- BACKGROUND IMAGE ----
         try {
-            const filePath = path.join(TICKETS_FOLDER, `${ticketId}.pdf`);
-            const doc = new PDFDocument({ size: "A4", margin: 0 }); // no margins for full background
-            const stream = fs.createWriteStream(filePath);
-            doc.pipe(stream);
+            const bgBuffer = await fetch(event.backgroundURL).then(r => r.arrayBuffer());
+            doc.image(Buffer.from(bgBuffer), 0, 0, { width: doc.page.width, height: doc.page.height });
+        } catch (err) {
+            console.log("⚠ Could not load background image");
+        }
 
-            const pageWidth = doc.page.width;
-            const pageHeight = doc.page.height;
+        // ---- EVENT LOGO (centered & 1.5× bigger) ----
+        try {
+            const logoBuffer = await fetch(event.logoURL).then(res => res.arrayBuffer());
+            const logoWidth = 180; // bigger
+            doc.image(Buffer.from(logoBuffer),
+                (doc.page.width - logoWidth) / 2,
+                40,
+                { width: logoWidth }
+            );
+        } catch (err) {
+            console.log("⚠ Logo failed to load");
+        }
 
-            // -----------------------------
-            // BACKGROUND IMAGE
-            // -----------------------------
-            if (event.backgroundURL) {
-                const resp = await fetch(event.backgroundURL);
-                const buffer = Buffer.from(await resp.arrayBuffer());
-                doc.image(buffer, 0, 0, {
-                    width: pageWidth,
-                    height: pageHeight
-                });
-            }
+        // ---- QR CODE (centered & 3× bigger) ----
+        const qrData = await QRCode.toBuffer(uniqueTicketId, { width: 600 });
+        const qrSize = 250; // bigger
+        const qrX = (doc.page.width - qrSize) / 2;
+        const qrY = 250;
 
-            // -----------------------------
-            // LOGO (center top, 1.5x bigger)
-            // -----------------------------
-            if (event.logoURL) {
-                const resp = await fetch(event.logoURL);
-                const buffer = Buffer.from(await resp.arrayBuffer());
+        doc.image(qrData, qrX, qrY, { width: qrSize });
 
-                const logoWidth = 150; // was 100 → now 1.5x bigger
-                doc.image(buffer, (pageWidth - logoWidth) / 2, 40, {
-                    width: logoWidth
-                });
-            }
+        // ---- TICKET INFO BOX (white container, bold) ----
+        const infoY = qrY + qrSize + 40;
 
-            // -----------------------------
-            // QR CODE (centered, 3x larger)
-            // -----------------------------
-            const qrData = `${process.env.RENDER_URL}/validate.html?ticketId=${encodeURIComponent(ticketId)}`;
-            const qrImg = await QRCode.toDataURL(qrData);
+        const boxWidth = doc.page.width * 0.75;
+        const boxX = (doc.page.width - boxWidth) / 2;
+        const boxHeight = 160;
 
-            const qrSize = 300; // was 150 → now 3x larger
-            doc.image(qrImg, (pageWidth - qrSize) / 2, 200, {
-                width: qrSize
+        // White background
+        doc.rect(boxX, infoY, boxWidth, boxHeight).fill("#FFFFFF");
+
+        doc.fillColor("#000000")
+            .font("Helvetica-Bold")
+            .fontSize(18);
+
+        const lineX = boxX + 20;
+        let lineY = infoY + 30;
+
+        // Event date (uppercase label)
+        const dateFormatted = new Date(event.date).toLocaleString("en-GB", {
+            dateStyle: "medium",
+            timeStyle: "short"
+        });
+
+        doc.text(`DATE: ${dateFormatted}`, lineX, lineY);
+        lineY += 35;
+
+        // Ticket name (no label)
+        doc.text(ticket.name.toUpperCase(), lineX, lineY);
+        lineY += 35;
+
+        // Unique ID only (no “Ticket ID:”)
+        doc.text(uniqueTicketId, lineX, lineY);
+
+        // ---- FOOTER (black bar bottom centered) ----
+        const footerHeight = 50;
+        const footerY = doc.page.height - footerHeight;
+
+        doc.rect(0, footerY, doc.page.width, footerHeight).fill("#000000");
+
+        doc.fillColor("#FFFFFF")
+            .font("Helvetica-Bold")
+            .fontSize(14)
+            .text("THANK YOU FOR YOUR PURCHASE — MIXO EVENTS", 0, footerY + 15, {
+                width: doc.page.width,
+                align: "center"
             });
 
-            // -----------------------------
-            // TICKET INFO BOX (centered, white background)
-            // -----------------------------
-            const infoBoxWidth = pageWidth * 0.8;
-            const infoBoxX = (pageWidth - infoBoxWidth) / 2;
-            const infoBoxY = 700;
-            const infoBoxHeight = 200;
+        doc.end();
 
-            // White rectangle
-            doc.rect(infoBoxX, infoBoxY, infoBoxWidth, infoBoxHeight)
-                .fillOpacity(0.95)
-                .fill("white")
-                .fillOpacity(1);
-
-            doc.fillColor("black")
-                .fontSize(22)
-                .text(`Ticket ID: ${ticketId}`, infoBoxX + 20, infoBoxY + 20, { width: infoBoxWidth - 40, align: "center" })
-                .moveDown(0.5)
-                .text(`Type: ${ticket.name}`, { align: "center" })
-                .moveDown(0.5)
-                .text(`Email: ${email}`, { align: "center" })
-                .moveDown(0.5)
-                .text(`Event: ${event.name}`, { align: "center" })
-                .moveDown(0.5)
-                .text(`Date: ${event.date.toDateString()} ${event.date.toLocaleTimeString()}`, { align: "center" });
-
-            // -----------------------------
-            // FOOTER BLACK BOX
-            // -----------------------------
-            const footerHeight = 120;
-            const footerY = pageHeight - footerHeight;
-
-            // Black rectangle
-            doc.rect(0, footerY, pageWidth, footerHeight)
-                .fillOpacity(1)
-                .fill("black");
-
-            doc.fillColor("white")
-                .fontSize(20)
-                .text("For event info & updates:", 0, footerY + 20, { width: pageWidth, align: "center" })
-                .moveDown(0.3)
-                .text("www.intheflo.xyz", { align: "center" })
-                .moveDown(0.3)
-                .text("instagram.com/intheflo.xyz • facebook.com/intheflo.xyz", { align: "center" });
-
-            doc.end();
-
-            stream.on("finish", () => resolve(filePath));
-            stream.on("error", (err) => reject(err));
-
-        } catch (err) {
-            reject(err);
-        }
+        stream.on("finish", () => resolve(filePath));
+        stream.on("error", reject);
     });
 }
 

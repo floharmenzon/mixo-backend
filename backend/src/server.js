@@ -103,15 +103,23 @@ app.get("/events/:id/tickets", async (req, res) => {
     const tickets = await prisma.ticket.findMany({ where: { eventId: id } });
 
     const processed = tickets.map(t => {
-        let status = "available";
-        let statusLabel = "Available";
+        // Use the status stored in the database
+        let status = t.status || "available";
 
-        if (t.sold >= t.max) {
-            status = "sold-out";
-            statusLabel = "Sold Out";
-        } else if (!t.available) { // Add your "coming soon" or "unavailable" logic here
-            status = "coming-soon";
-            statusLabel = "Coming Soon";
+        // Map status to a label
+        let statusLabel;
+        switch (status) {
+            case "sold-out":
+                statusLabel = "Sold Out";
+                break;
+            case "coming-soon":
+                statusLabel = "Coming Soon";
+                break;
+            case "unavailable":
+                statusLabel = "Unavailable";
+                break;
+            default:
+                statusLabel = "Available";
         }
 
         return { ...t, status, statusLabel };
@@ -120,28 +128,44 @@ app.get("/events/:id/tickets", async (req, res) => {
     res.json(processed);
 });
 
+
 // -----------------
 // Create payment
 // -----------------
 app.post("/create-payment", async (req, res) => {
     const { tickets: selectedTickets, email, eventId } = req.body;
-    if (!selectedTickets || !email || !eventId) return res.status(400).json({ error: "Missing data" });
+    if (!selectedTickets || !email || !eventId)
+        return res.status(400).json({ error: "Missing data" });
 
     try {
-        const event = await prisma.event.findUnique({ where: { id: eventId }, include: { tickets: true } });
+        const event = await prisma.event.findUnique({
+            where: { id: eventId },
+            include: { tickets: true }
+        });
         if (!event) return res.status(404).json({ error: "Event not found" });
 
         let totalAmount = 0;
+
         for (const t of selectedTickets) {
             const ticket = await prisma.ticket.findUnique({ where: { id: t.id } });
             if (!ticket) return res.status(400).json({ error: "Ticket not found" });
-            if (ticket.sold + t.quantity > ticket.max) return res.status(400).json({ error: `Not enough ${ticket.name} tickets` });
-            totalAmount += ticket.price * t.quantity * 1.09;
+
+            // Block tickets if status is not available
+            if (ticket.status !== "available" || ticket.sold + t.quantity > ticket.max) {
+                return res.status(400).json({
+                    error: `Ticket "${ticket.name}" is not available for purchase`
+                });
+            }
+
+            totalAmount += ticket.price * t.quantity * 1.09; // include BTW/fees
         }
 
         const response = await fetch("https://api.mollie.com/v2/payments", {
             method: "POST",
-            headers: { Authorization: `Bearer ${process.env.MOLLIE_API_KEY}`, "Content-Type": "application/json" },
+            headers: {
+                Authorization: `Bearer ${process.env.MOLLIE_API_KEY}`,
+                "Content-Type": "application/json"
+            },
             body: JSON.stringify({
                 amount: { currency: "EUR", value: totalAmount.toFixed(2) },
                 description: `Tickets for ${event.name}`,
@@ -153,6 +177,7 @@ app.post("/create-payment", async (req, res) => {
 
         const data = await response.json();
         res.json({ checkoutUrl: data._links.checkout.href });
+
     } catch (e) {
         res.status(500).json({ error: e.toString() });
     }
@@ -226,9 +251,12 @@ app.get("/validate/:ticketId", async (req, res) => {
     res.send("✅ Ticket validated successfully");
 });
 
-// -----------------
 // Admin routes
-// -----------------
 app.use("/admin", adminRouter);
+
+// Optional: simple check for GET /admin
+app.get("/admin", (req, res) => {
+    res.send("✅ Admin backend is running. Use API endpoints like /admin/tickets");
+});
 
 app.listen(PORT, () => console.log("✅ Backend running on port " + PORT));

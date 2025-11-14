@@ -1,31 +1,27 @@
 {
-  "name": "mixo-backend",
-  "version": "1.0.0",
-  "description": "Backend for MIXO ticket system with Mollie payments, PDF tickets, and QR code validation",
-  "main": "server.js",
-  "type": "module",
-  "scripts": {
-    "start": "node server.js"
-  },
-  "author": "Your Name",
-  "license": "MIT",
-  "dependencies": {
-    "cors": "^2.8.5",
-    "dotenv": "^17.2.3",
-    "express": "^4.21.2",
-    "fs-extra": "^11.3.2",
-    "node-fetch": "^3.3.2",
-    "nodemailer": "^6.10.1",
-    "pdfkit": "^0.13.0",
-    "qrcode": "^1.5.4"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/floharmenzon/mixo-backend.git"
-  },
-  "keywords": [],
-  "bugs": {
-    "url": "https://github.com/floharmenzon/mixo-backend/issues"
-  },
-  "homepage": "https://github.com/floharmenzon/mixo-backend#readme"
+    "name": "mixo-backend",
+    "version": "1.0.0",
+    "type": "module",
+    "scripts": {
+        "start": "node server.js",
+        "dev": "nodemon server.js",
+        "prisma:generate": "prisma generate",
+        "prisma:push": "prisma db push",
+        "seed": "node prisma/seed.js"
+    },
+    "dependencies": {
+        "@prisma/client": "^5.22.0",
+        "axios": "^1.4.0",
+        "cors": "^2.8.5",
+        "dotenv": "^16.6.1",
+        "express": "^4.21.2",
+        "node-fetch": "^3.3.2",
+        "nodemailer": "^6.10.1",
+        "pdfkit": "^0.13.0",
+        "qrcode": "^1.5.4"
+    },
+    "devDependencies": {
+        "nodemon": "^2.0.22",
+        "prisma": "^5.22.0"
+    }
 }

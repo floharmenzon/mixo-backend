@@ -1,4 +1,16 @@
 node_modules/
 .env
-ticketsData.json
+/prisma/dev.db
+/tickets_pdf/
+/issuedTickets.json
+/usedTickets.json
+/pendingOrders.json
+/audit.log
+/backupwidget
+.DS_Store
+npm-debug.log
 .vs/
+*.sln
+*.user
+*.suo
+*.slnx

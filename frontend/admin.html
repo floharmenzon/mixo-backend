@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>MIXO Admin Dashboard</title>
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			background: #0a0a0a;
+			color: white;
+			padding: 20px;
+		}
+
+		h1 {
+			color: #b00000;
+		}
+
+		table {
+			width: 100%;
+			border-collapse: collapse;
+			margin-bottom: 40px;
+		}
+
+		th, td {
+			border: 1px solid #444;
+			padding: 8px;
+			text-align: center;
+		}
+
+		th {
+			background: #222;
+		}
+
+		td.used {
+			background: #550000;
+			color: #fff;
+		}
+
+		td.unused {
+			background: #005500;
+			color: #fff;
+		}
+	</style>
+</head>
+<body>
+	<h1>MIXO Admin Dashboard</h1>
+	<input type="password" id="adminPass" placeholder="Admin password" style="padding:6px; margin-bottom:10px;">
+	<button id="loadBtn">Load Events</button>
+
+	<div id="eventsContainer"></div>
+
+	<script>
+		const BACKEND_URL = "https://mixo-backend.onrender.com/admin/events";
+
+		document.getElementById("loadBtn").addEventListener("click", async () => {
+			const pass = document.getElementById("adminPass").value.trim();
+			if (!pass) { alert("Enter admin password"); return; }
+
+			try {
+				const res = await fetch(`${BACKEND_URL}?pass=${pass}`);
+				const events = await res.json();
+				if (events.error) { alert(events.error); return; }
+
+				const container = document.getElementById("eventsContainer");
+				container.innerHTML = "";
+				events.forEach(event => {
+					const eventDiv = document.createElement("div");
+					eventDiv.innerHTML = `<h2>${event.name} - ${new Date(event.date).toLocaleString()}</h2>`;
+
+					let html = `<table><tr><th>Ticket Name</th><th>Code</th><th>Price</th><th>Sold</th><th>Max</th><th>Issued Tickets</th></tr>`;
+					event.tickets.forEach(t => {
+						const issued = t.issuedTickets.length;
+						html += `<tr>
+			  <td>${t.name}</td>
+			  <td>${t.code}</td>
+			  <td>€${t.price.toFixed(2)}</td>
+			  <td>${t.sold}</td>
+			  <td>${t.max}</td>
+			  <td>${issued}</td>
+			</tr>`;
+					});
+					html += `</table>`;
+					eventDiv.innerHTML += html;
+					container.appendChild(eventDiv);
+				});
+			} catch (e) { console.error(e); alert("Failed to load events"); }
+		});
+	</script>
+</body>
+</html>

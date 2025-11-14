@@ -1,0 +1,13 @@
+﻿<script>
+	const BACKEND_URL = "https://mixo-backend.onrender.com/create-payment";
+	const EVENT_ID = "PUT_EVENT_ID_HERE"; // Replace with Prisma event id
+...
+	checkoutBtn.addEventListener("click", async () => {
+  ...
+  const res = await fetch(BACKEND_URL, {
+		method: "POST",
+		headers: { "Content-Type": "application/json" },
+		body: JSON.stringify({ tickets: selectedTickets, email, eventId: EVENT_ID })
+	});
+});
+</script>

@@ -1,0 +1,94 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="UTF-8">
+	<title>Validate Ticket</title>
+	<style>
+		body {
+			font-family: Arial, sans-serif;
+			background: #0a0a0a;
+			color: white;
+			display: flex;
+			justify-content: center;
+			align-items: center;
+			height: 100vh;
+		}
+
+		#container {
+			text-align: center;
+			background: #1a1a1a;
+			padding: 40px;
+			border-radius: 12px;
+			width: 350px;
+		}
+
+		input {
+			width: 80%;
+			padding: 10px;
+			border-radius: 8px;
+			border: none;
+			margin-bottom: 10px;
+			font-size: 1em;
+		}
+
+		button {
+			padding: 12px 20px;
+			border: none;
+			border-radius: 8px;
+			background: #b00000;
+			color: white;
+			font-size: 1em;
+			cursor: pointer;
+			transition: all 0.3s ease;
+		}
+
+			button:hover {
+				box-shadow: 0 0 12px #b00000, 0 0 25px #b00000;
+			}
+
+		.status {
+			margin-top: 20px;
+			font-size: 1.1em;
+			font-weight: bold;
+		}
+	</style>
+</head>
+<body>
+	<div id="container">
+		<h2>Validate Ticket</h2>
+		<input id="ticketId" type="text" placeholder="Enter Ticket ID">
+		<button id="validateBtn">Validate</button>
+		<div id="status" class="status"></div>
+	</div>
+
+	<script>
+		const BACKEND_URL = "https://mixo-backend.onrender.com/validate/";
+
+		document.getElementById("validateBtn").addEventListener("click", async () => {
+			const ticketId = document.getElementById("ticketId").value.trim();
+			const statusEl = document.getElementById("status");
+			if (!ticketId) { statusEl.textContent = "Please enter a ticket ID"; statusEl.style.color = "orange"; return; }
+
+			try {
+				const res = await fetch(BACKEND_URL + encodeURIComponent(ticketId));
+				if (res.status === 200) {
+					statusEl.textContent = "✅ Ticket validated successfully";
+					statusEl.style.color = "green";
+				} else if (res.status === 404) {
+					statusEl.textContent = "⚠️ Ticket not found";
+					statusEl.style.color = "orange";
+				} else if (res.status === 410) {
+					statusEl.textContent = "❌ Ticket already used";
+					statusEl.style.color = "red";
+				} else {
+					statusEl.textContent = "Error validating ticket";
+					statusEl.style.color = "red";
+				}
+			} catch (e) {
+				statusEl.textContent = "Failed to connect to server";
+				statusEl.style.color = "red";
+			}
+		});
+	</script>
+</body>
+</html>

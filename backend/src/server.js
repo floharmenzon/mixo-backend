@@ -77,7 +77,7 @@ async function generateTicketPDF(ticketId, ticket, event, email) {
             const qrData = `${process.env.RENDER_URL}/validate.html?ticketId=${encodeURIComponent(ticketId)}`;
             const qrImg = await QRCode.toDataURL(qrData);
 
-            const qrSize = 450; // was 150 → now 3x larger
+            const qrSize = 300; // was 150 → now 3x larger
             doc.image(qrImg, (pageWidth - qrSize) / 2, 200, {
                 width: qrSize
             });

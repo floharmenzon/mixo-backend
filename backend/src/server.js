@@ -116,28 +116,37 @@ async function generateTicketPDF(uniqueTicketId, ticket, event, email) {
 
         // Unique ID
         doc.text(uniqueTicketId, boxX, lineY, textOptions);
-
+        
         // ---- FOOTER (black bar bottom centered) ----
-        const footerHeight = 50;
+        const footerHeight = 70;
+        const pageWidth = doc.page.width;
         const footerY = doc.page.height - footerHeight;
 
-        doc.rect(0, footerY, doc.page.width, footerHeight).fill("#000000");
+        // Black background bar
+        doc.rect(0, footerY, pageWidth, footerHeight).fill("#000000");
 
+        // Footer text
         doc.fillColor("#FFFFFF")
             .font("Helvetica-Bold")
             .fontSize(14)
-            .text("For event info & updates:", 0, footerY + 20, { width: pageWidth, align: "center" })
-            .moveDown(0.3)
-            .text("www.intheflo.xyz", { align: "center" })
-            .moveDown(0.3)
-            .text("instagram.com/intheflo.xyz • facebook.com/intheflo.xyz", { align: "center" });
-
+            .text("For event info & updates:", 0, footerY + 10, {
+                width: pageWidth,
+                align: "center"
+            })
+            .text("www.intheflo.xyz", 0, footerY + 30, {
+                width: pageWidth,
+                align: "center"
+            })
+            .text("instagram.com/intheflo.xyz • facebook.com/intheflo.xyz", 0, footerY + 50, {
+                width: pageWidth,
+                align: "center"
+            });
         doc.end();
 
         stream.on("finish", () => resolve(filePath));
         stream.on("error", reject);
-    });
-}
+    }); // CLOSES new Promise
+} // CLOSES generateTicketPDF()
 
 // -----------------
 // Get tickets per event

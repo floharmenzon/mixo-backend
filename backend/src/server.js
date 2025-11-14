@@ -125,7 +125,7 @@ app.post("/create-payment", async (req, res) => {
             body: JSON.stringify({
                 amount: { currency: "EUR", value: totalAmount.toFixed(2) },
                 description: `Tickets for ${event.name}`,
-                redirectUrl: `${process.env.RENDER_URL}/thank-you`,
+                redirectUrl: `https://www.intheflo.xyz/thank-you`,
                 webhookUrl: `${process.env.RENDER_URL}/mollie-webhook`,
                 metadata: { email, eventId, selectedTickets }
             })

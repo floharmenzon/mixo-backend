@@ -36,63 +36,106 @@ const transporter = nodemailer.createTransport({
 // Generate Ticket PDF
 // -----------------
 async function generateTicketPDF(ticketId, ticket, event, email) {
-    const filePath = path.join(TICKETS_FOLDER, `${ticketId}.pdf`);
-    const doc = new PDFDocument({ size: "A4", margin: 40 });
-    const stream = fs.createWriteStream(filePath);
-    doc.pipe(stream);
+    return new Promise(async (resolve, reject) => {
+        try {
+            const filePath = path.join(TICKETS_FOLDER, `${ticketId}.pdf`);
+            const doc = new PDFDocument({ size: "A4", margin: 0 }); // no margins for full background
+            const stream = fs.createWriteStream(filePath);
+            doc.pipe(stream);
 
-    try {
-        // Background image
-        if (event.backgroundURL) {
-            const response = await fetch(event.backgroundURL);
-            if (response.ok) {
-                const buffer = Buffer.from(await response.arrayBuffer());
-                doc.image(buffer, 0, 0, { width: doc.page.width, height: doc.page.height });
+            const pageWidth = doc.page.width;
+            const pageHeight = doc.page.height;
+
+            // -----------------------------
+            // BACKGROUND IMAGE
+            // -----------------------------
+            if (event.backgroundURL) {
+                const resp = await fetch(event.backgroundURL);
+                const buffer = Buffer.from(await resp.arrayBuffer());
+                doc.image(buffer, 0, 0, {
+                    width: pageWidth,
+                    height: pageHeight
+                });
             }
-        }
 
-        // Logo
-        if (event.logoURL) {
-            const response = await fetch(event.logoURL);
-            if (response.ok) {
-                const buffer = Buffer.from(await response.arrayBuffer());
-                doc.image(buffer, doc.page.width / 2 - 50, 40, { width: 100 });
+            // -----------------------------
+            // LOGO (center top, 1.5x bigger)
+            // -----------------------------
+            if (event.logoURL) {
+                const resp = await fetch(event.logoURL);
+                const buffer = Buffer.from(await resp.arrayBuffer());
+
+                const logoWidth = 150; // was 100 → now 1.5x bigger
+                doc.image(buffer, (pageWidth - logoWidth) / 2, 40, {
+                    width: logoWidth
+                });
             }
-        }
 
-        // Ticket info
-        doc.moveDown(10)
-            .fillColor("black")
-            .fontSize(16)
-            .text(`Ticket ID: ${ticketId}`)
-            .text(`Type: ${ticket.name}`)
-            .text(`Email: ${email}`)
-            .text(`Event: ${event.name}`)
-            .text(`Date: ${event.date.toDateString()} ${event.date.toLocaleTimeString()}`)
-            .text(`Ticket Code: ${ticket.code}`);
+            // -----------------------------
+            // QR CODE (centered, 3x larger)
+            // -----------------------------
+            const qrData = `${process.env.RENDER_URL}/validate.html?ticketId=${encodeURIComponent(ticketId)}`;
+            const qrImg = await QRCode.toDataURL(qrData);
 
-        // QR code
-        const qrData = `${process.env.RENDER_URL}/validate.html?ticketId=${encodeURIComponent(ticketId)}`;
-        const qrImg = await QRCode.toDataURL(qrData);
-        doc.image(qrImg, doc.page.width - 180, 200, { width: 150 });
+            const qrSize = 450; // was 150 → now 3x larger
+            doc.image(qrImg, (pageWidth - qrSize) / 2, 200, {
+                width: qrSize
+            });
 
-        // Footer
-        doc.moveDown(15).fontSize(12).fillColor("gray")
-            .text("For more information or questions, please check out:", { align: "center" })
-            .text("Website: www.intheflo.xyz", { align: "center" })
-            .text("Instagram: www.instagram.com/intheflo.xyz", { align: "center" })
-            .text("Facebook: www.facebook.com/intheflo.xyz", { align: "center" });
+            // -----------------------------
+            // TICKET INFO BOX (centered, white background)
+            // -----------------------------
+            const infoBoxWidth = pageWidth * 0.8;
+            const infoBoxX = (pageWidth - infoBoxWidth) / 2;
+            const infoBoxY = 700;
+            const infoBoxHeight = 200;
 
-        doc.end();
+            // White rectangle
+            doc.rect(infoBoxX, infoBoxY, infoBoxWidth, infoBoxHeight)
+                .fillOpacity(0.95)
+                .fill("white")
+                .fillOpacity(1);
 
-        return new Promise((resolve, reject) => {
+            doc.fillColor("black")
+                .fontSize(22)
+                .text(`Ticket ID: ${ticketId}`, infoBoxX + 20, infoBoxY + 20, { width: infoBoxWidth - 40, align: "center" })
+                .moveDown(0.5)
+                .text(`Type: ${ticket.name}`, { align: "center" })
+                .moveDown(0.5)
+                .text(`Email: ${email}`, { align: "center" })
+                .moveDown(0.5)
+                .text(`Event: ${event.name}`, { align: "center" })
+                .moveDown(0.5)
+                .text(`Date: ${event.date.toDateString()} ${event.date.toLocaleTimeString()}`, { align: "center" });
+
+            // -----------------------------
+            // FOOTER BLACK BOX
+            // -----------------------------
+            const footerHeight = 120;
+            const footerY = pageHeight - footerHeight;
+
+            // Black rectangle
+            doc.rect(0, footerY, pageWidth, footerHeight)
+                .fillOpacity(1)
+                .fill("black");
+
+            doc.fillColor("white")
+                .fontSize(20)
+                .text("For event info & updates:", 0, footerY + 20, { width: pageWidth, align: "center" })
+                .moveDown(0.3)
+                .text("www.intheflo.xyz", { align: "center" })
+                .moveDown(0.3)
+                .text("instagram.com/intheflo.xyz • facebook.com/intheflo.xyz", { align: "center" });
+
+            doc.end();
+
             stream.on("finish", () => resolve(filePath));
-            stream.on("error", reject);
-        });
-    } catch (err) {
-        doc.end();
-        throw err;
-    }
+            stream.on("error", (err) => reject(err));
+
+        } catch (err) {
+            reject(err);
+        }
+    });
 }
 
 // -----------------

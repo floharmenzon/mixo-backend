@@ -199,7 +199,7 @@ app.post("/mollie-webhook", async (req, res) => {
         const paymentData = await mollieRes.json();
         if (paymentData.status !== "paid") return;
 
-        const { eventId, tickets: selectedTickets, email } = paymentData.metadata;
+        const { eventId, selectedTickets, email } = paymentData.metadata;
         const event = await prisma.event.findUnique({ where: { id: eventId }, include: { tickets: true } });
         if (!event) return;
 

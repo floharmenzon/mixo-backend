@@ -38,11 +38,21 @@ async function generateTicketPDF(ticketId, ticket, event, email) {
             const stream = fs.createWriteStream(filePath);
             doc.pipe(stream);
 
-            // Background
-            if (event.backgroundURL) doc.image(event.backgroundURL, 0, 0, { width: doc.page.width, height: doc.page.height });
+            // Background image (fetch from URL)
+            if (event.backgroundURL) {
+                const response = await fetch(event.backgroundURL);
+                if (!response.ok) throw new Error(`Failed to fetch background image: ${response.statusText}`);
+                const buffer = await response.arrayBuffer();
+                doc.image(Buffer.from(buffer), 0, 0, { width: doc.page.width, height: doc.page.height });
+            }
 
-            // Logo
-            if (event.logoURL) doc.image(event.logoURL, doc.page.width / 2 - 50, 40, { width: 100 });
+            // Logo (fetch from URL)
+            if (event.logoURL) {
+                const response = await fetch(event.logoURL);
+                if (!response.ok) throw new Error(`Failed to fetch logo image: ${response.statusText}`);
+                const buffer = await response.arrayBuffer();
+                doc.image(Buffer.from(buffer), doc.page.width / 2 - 50, 40, { width: 100 });
+            }
 
             // Ticket info
             doc.moveDown(10).fillColor("black").fontSize(16)
@@ -53,7 +63,7 @@ async function generateTicketPDF(ticketId, ticket, event, email) {
                 .text(`Date: ${event.date.toDateString()} ${event.date.toLocaleTimeString()}`, { align: "left" })
                 .text(`Ticket Code: ${ticket.code}`, { align: "left" });
 
-            // QR Code
+            // QR code
             const qrData = `${process.env.RENDER_URL}/validate.html?ticketId=${encodeURIComponent(ticketId)}`;
             const qrImg = await QRCode.toDataURL(qrData);
             doc.image(qrImg, doc.page.width - 180, 200, { width: 150 });
@@ -66,8 +76,13 @@ async function generateTicketPDF(ticketId, ticket, event, email) {
                 .text("Facebook: www.facebook.com/intheflo.xyz", { align: "center" });
 
             doc.end();
+
             stream.on("finish", () => resolve(filePath));
-        } catch (e) { reject(e); }
+            stream.on("error", (err) => reject(err));
+
+        } catch (e) {
+            reject(e);
+        }
     });
 }
 
